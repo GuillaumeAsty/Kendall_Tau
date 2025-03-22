@@ -2,6 +2,7 @@
 library(ggplot2)
 library(microbenchmark)
 library(Rcpp)
+library(reshape2)
 
 library(Kendall)
 ```
@@ -30,22 +31,26 @@ bootstrap_kendall <- function(x, y, n_bootstrap) {
 
 # Fonction pour générer des données avec une structure de corrélation non linéaire
 generate_nonlinear_data <- function(n) {
-  # Générer un vecteur X aléatoire
-  X <- runif(n, min = -pi, max = pi)
+  # Générer X et alpha aléatoires
+  X <- rnorm(n)
+  alpha <- rnorm(n)
   
-  # Générer une variable Y non linéairement dépendante de X
-  # Utilisation d'une fonction trigonométrique (sinus) pour la non-linéarité
-  Y <- sin(X) + 0.5 * cos(X) + rnorm(n, mean = 0, sd = 0.1)  # Ajout d'un bruit pour rendre la relation non déterministe
+  # Calculer Y en fonction de alpha
+  Y <- ifelse(alpha > 0,   # Corrélation positive
+              X + X * rnorm(n),  # Y = X * un bruit aléatoire
+              ifelse(alpha < 0,  # Corrélation négative
+                     (X + X * rnorm(n)) * -1,  # Y = -X * un bruit aléatoire
+                     rnorm(n)))  # Si alpha = 0, Y indépendant de X
   
-  # Retourner les données sous forme de liste
   return(list(X = X, Y = Y))
 }
-
 ```
 
 
 ```{r}
-N_values <- seq(100, 101, by=100)
+cat ("##### Test des fonctions avec différentes tailles d'échantillons #####\n")
+
+N_values <- seq(100, 2001, by=50)
 n_bootstrap <- 100
 results <- data.frame()
 
@@ -54,7 +59,7 @@ for (N in N_values) {
   x <- data$X
   y <- data$Y
   
-  # Calcul des tau réels et par méthode
+  # Calcul des tau
   tau_R_naif <- naive_tau_kendall_R(x, y)
   tau_R_ND <- NDtau_kendall_R(x, y)
   tau_cpp_naif <- naive_tau_kendall_cpp(x, y)
@@ -101,107 +106,225 @@ for (N in N_values) {
 print(head(results))
 
 ```
+```{r}
+cat("##### Vérification des Tau calculés #####\n")
+
+plot_tau_vs_bootstrap_with_ci <- function(results) {
+  
+  # Transformer les données pour un format long compatible avec ggplot2
+  results_long <- melt(results, id.vars = c("N", "Tau_Bootstrap_mean", "Tau_Bootstrap_lower", "Tau_Bootstrap_upper"), 
+                       measure.vars = c("Tau_R_naif", "Tau_R_ND", "Tau_cpp_naif", "Tau_cpp_ND"),
+                       variable.name = "Method", value.name = "Tau")
+  
+  # Définir des tailles différentes de points pour chaque méthode
+  size_mapping <- c("Tau_R_naif" = 3.5, "Tau_R_ND" = 3, "Tau_cpp_naif" = 2.5, "Tau_cpp_ND" = 2)
+  
+  # Tracer les tau estimés en fonction de N avec les intervalles de confiance
+  ggplot(results_long, aes(x = N, y = Tau, color = Method)) +
+    geom_point(aes(size = Method), shape = 1, stroke = 1.2) +  # Cercles vides avec tailles différentes
+    geom_errorbar(aes(ymin = Tau_Bootstrap_lower, ymax = Tau_Bootstrap_upper), 
+                  width = 0.01, alpha = 0.4, color = "gray") + 
+    scale_y_continuous(limits = c(-1, 1)) +
+    scale_size_manual(values = size_mapping) +  
+    labs(title = "Tau estimés vs Taille de l'échantillon (N) avec IC",
+         x = "Taille de l'échantillon (N)", 
+         y = "Tau estimé",
+         color = "Méthode",
+         size = "Méthode") +
+    theme_minimal()
+}
+
+plot_tau_vs_bootstrap_with_ci(results)
+
+```
+
+
 
 
 ```{r}
-cat ("##### ANALYSE DE L'APPROCHE NAIVE #####\n")
+cat ("##### Comparatif simple des temps des différentes méthodes #####\n")
+plot_execution_times <- function(results) {
 
-# Tracer les résultats de Tau
-ggplot(results, aes(x = N)) +
-  geom_point(aes(y = Tau_Bootstrap_mean, color = "Real_tau"), size = 2) +
-  geom_point(aes(y = Tau_R_naif, color = "R_naif"), size = 2) +
-  geom_point(aes(y = Tau_cpp_naif, color = "cpp_naif"), size = 2) +
+  # Transformer les données pour un format long compatible avec ggplot2
+  results_long <- reshape2::melt(results, id.vars = "N", 
+                                 measure.vars = c("Time_R_naif", "Time_R_ND", "Time_cpp_naif", "Time_cpp_ND"),
+                                 variable.name = "Method", value.name = "Time")
+  
+  # Tracer les temps d'exécution en fonction de N
+  ggplot(results_long, aes(x = N, y = Time, color = Method)) +
+    geom_line(size = 1) +
+    geom_point(size = 2) +
+    labs(title = "Temps d'exécution en fonction de N",
+         x = "Taille de l'échantillon (N)", 
+         y = "Temps d'exécution (ms)",
+         color = "Méthode") +
+    theme_minimal() +
+    scale_color_manual(values = c("Time_R_naif" = "blue", "Time_R_ND" = "red", 
+                                  "Time_cpp_naif" = "green", "Time_cpp_ND" = "purple"))
+}
 
-  #scale_y_continuous(limits = c(-1, 1)) +
-  labs(title = "Comparaison des valeurs de Tau en fonction de N",
-       x = "Taille du vecteur N",
-       y = "Valeur de Tau",
-       color = "Langage") +
-  scale_color_manual(values = c("R_naif" = "blue", "cpp_naif" = "red", "Real_tau" = "grey")) +
-  theme_minimal() +
-  theme(legend.position = "top")
+plot_execution_times(results)
+```
+```{r}
+cat("##### Calcul du N maximum par méthode pour un temps limite fixé #####\n")
+find_max_N_power_test <- function(time_limit_sec, N_init = 10, N_max_exp = 6) {
 
-# Calcul du ratio de temps entre R et Rcpp
+  # Fonctions à tester
+  methods <- list(
+    "Tau_R_naif" = naive_tau_kendall_R,
+    "Tau_R_ND" = NDtau_kendall_R,
+    "Tau_cpp_naif" = naive_tau_kendall_cpp,
+    "Tau_cpp_ND" = NDtau_kendall_cpp
+  )
+  
+  # Liste pour stocker le N_max pour chaque méthode
+  max_N_for_methods <- numeric(length(methods))
+  names(max_N_for_methods) <- names(methods)
+  
+  # Boucle sur chaque méthode
+  for (method in names(methods)) {
+    func <- methods[[method]]
+    
+    max_N_for_method <- 0  # Variable pour stocker le plus grand N testé sous le temps limite
+    
+    # Tester les puissances de N
+    for (exp in 1:N_max_exp) {
+      N_test <- N_init * 10^exp  # Puissance de 10 de N_test
+      data <- generate_nonlinear_data(N_test)
+      
+      # Mesurer le temps d'exécution
+      exec_time_sec <- microbenchmark(func(data$X, data$Y), times = 1)$time / 1e9  # Convertir en secondes
+      
+      # Ajouter le résultat si le temps est sous le temps limite
+      if (exec_time_sec > time_limit_sec) {
+        break  # Arrêter dès que le temps dépasse
+      }
+      
+      # Mettre à jour le plus grand N pour cette méthode
+      max_N_for_method <- N_test
+    }
+    
+    # Stocker le N_max pour la méthode
+    max_N_for_methods[method] <- max_N_for_method
+  }
+  
+  # Créer un data frame avec les résultats sous forme de ligne
+  N_results <- as.data.frame(t(max_N_for_methods))
+  colnames(N_results) <- names(methods)
+  
+  return(N_results)
+}
+
+max_N_test_results <- find_max_N_power_test(time_limit_sec = 60, N_init = 10, N_max_exp = 6)
+print(max_N_test_results)
+```
+
+
+```{r}
+cat ("##### Analyse du ratio entre R et C++ pour la méthode naive #####\n")
+
+# Calcul du ratio entre R et C++ pour la méthode naive
 results$Ratio_naif <- results$Time_R_naif / results$Time_cpp_naif
-cat(paste("\nRatio moyen entre R et Rcpp :", mean(results$Ratio_naif)), "\n\n")
 
+# Tracer le ratio entre R et C++ pour la méthode naive
+ggplot(results, aes(x = N, y = Ratio_naif)) +
+  geom_point(color = "blue", size = 3) + 
+  geom_line(color = "blue", size = 1) +
+    scale_y_continuous(limits = c(mean(results$Ratio_naif)/3, mean(results$Ratio_naif)*3)) +
+  labs(title = "Ratio des Temps d'Exécution entre R et C++ pour la méthode naive",
+       x = "Taille de N", 
+       y = "Ratio (R / C++)",
+       subtitle = paste("Ratio moyen : ", round(mean(results$Ratio_naif), 2))) +
+  theme_minimal()
+```
+
+```{r}
+cat ("##### Analyse du ratio entre R et C++ pour la méthode ND #####\n")
+
+# Calcul du ratio entre R et C++ pour la méthode ND
+results$Ratio_ND <- results$Time_R_ND / results$Time_cpp_ND
+
+# Tracer le ratio entre R et C++ pour la méthode ND
+ggplot(results, aes(x = N, y = Ratio_ND)) +
+  geom_point(color = "blue", size = 3) + 
+  geom_line(color = "blue", size = 1) +
+    scale_y_continuous(limits = c(mean(results$Ratio_ND)/3, mean(results$Ratio_ND)*3)) +
+  labs(title = "Ratio des Temps d'Exécution entre R et C++ pour la méthode ND",
+       x = "Taille de N", 
+       y = "Ratio (R / C++)",
+       subtitle = paste("Ratio moyen : ", round(mean(results$Ratio_ND), 2))) +
+  theme_minimal()
+```
+
+
+```{r}
+cat ("##### Régression de la complexité temporelle de l'approche naïve #####\n")
+
+# Calcul des logarithmes nécessaires
 results$log_N <- log(results$N)
 results$log_Time_R_naif <- log(results$Time_R_naif)
 results$log_Time_cpp_naif <- log(results$Time_cpp_naif)
 
-# Régression linéaire log-log pour R
-lm_log_R_naif <- lm(log_Time_R_naif ~ log_N, data = results)
-pente_R_naif <- coef(lm_log_R_naif)[2]
-cat("Pente de la régression log-log en R :", pente_R_naif, "\n")
+# Régressions log-log pour obtenir les pentes
+lm_R_naif <- lm(log_Time_R_naif ~ log_N, data = results)
+lm_cpp_naif <- lm(log_Time_cpp_naif ~ log_N, data = results)
 
-# Régression linéaire log-log pour Rcpp
-lm_log_cpp_naif <- lm(log_Time_cpp_naif ~ log_N, data = results)
-pente_cpp_naif <- coef(lm_log_cpp_naif)[2]
-cat("Pente de la régression log-log en Rcpp :", pente_cpp_naif, "\n")
+# Extraction des pentes
+pente_R_naif <- coef(lm_R_naif)[2]
+pente_cpp_naif <- coef(lm_cpp_naif)[2]
 
-# Tracer la régression log-log avec légende
+# Graphique
 ggplot(results, aes(x = log_N)) +
-  geom_point(aes(y = log_Time_R_naif, color = "R_naif"), size = 2) +
-  geom_point(aes(y = log_Time_cpp_naif, color = "cpp_naif"), size = 2) +
-  geom_smooth(aes(y = log_Time_R_naif, color = "R_naif"), method = "lm", se = FALSE, size = 1) +
-  geom_smooth(aes(y = log_Time_cpp_naif, color = "cpp_naif"), method = "lm", se = FALSE, size = 1) +
-  labs(title = "Régression log-log des temps d'exécution en fonction de N",
-       x = "log(N)",
-       y = "log(Temps d'exécution)",
-       color = "Langage") +
+  geom_point(aes(y = log_Time_R_naif, color = "R_naif"), size = 3, shape = 16, alpha = 0.7) +
+  geom_point(aes(y = log_Time_cpp_naif, color = "cpp_naif"), size = 3, shape = 16, alpha = 0.7) +
+  geom_smooth(aes(y = log_Time_R_naif, color = "R_naif"), method = "lm", se = FALSE, size = 1, linetype = "dashed") +
+  geom_smooth(aes(y = log_Time_cpp_naif, color = "cpp_naif"), method = "lm", se = FALSE, size = 1, linetype = "dashed") +
+  labs(
+    title = "Régression log-log des temps d'exécution en fonction de N",
+    subtitle = paste("Pente (R_naif) =", round(pente_R_naif, 2), "| Pente (cpp_naif) =", round(pente_cpp_naif, 2)),
+    x = "log(N)",
+    y = "log(Temps d'exécution)",
+    color = "Méthode"
+  ) +
   scale_color_manual(values = c("R_naif" = "blue", "cpp_naif" = "red")) +
   theme_minimal() +
-  theme(legend.position = "top") 
+  theme(legend.position = "top", plot.subtitle = element_text(size = 12, face = "italic"))
 
 ```
 
+
 ```{r}
-cat ("##### ANALYSE DE L'APPROCHE ND #####\n")
+cat ("##### Régression de la complexité temporelle de l'approche ND #####\n")
 
-# Tracer les résultats de Tau
-ggplot(results, aes(x = N)) +
-  geom_point(aes(y = Tau_Bootstrap_mean, color = "Real_tau"), size = 2) +
-  geom_point(aes(y = Tau_R_ND, color = "R_ND"), size = 2) +
-  geom_point(aes(y = Tau_cpp_ND, color = "cpp_ND"), size = 2) +
-  #scale_y_continuous(limits = c(-1, 1)) +
-  labs(title = "Comparaison des valeurs de Tau en fonction de N",
-       x = "Taille du vecteur N",
-       y = "Valeur de Tau",
-       color = "Langage") +
-  scale_color_manual(values = c("R_ND" = "blue", "cpp_ND" = "red", "Real_tau" = "grey")) +
-  theme_minimal() +
-  theme(legend.position = "top")
-
-# Calcul du ratio de temps entre R et Rcpp
-results$Ratio_ND <- results$Time_R_ND / results$Time_cpp_ND
-cat(paste("\nRatio moyen entre R et Rcpp :", mean(results$Ratio_ND)), "\n\n")
-
+# Calcul des logarithmes nécessaires
+results$Nlog_N <- N*log(results$N)
 results$log_Time_R_ND <- log(results$Time_R_ND)
 results$log_Time_cpp_ND <- log(results$Time_cpp_ND)
 
-# Régression linéaire pour R
-lm_R_ND <- lm(log_Time_R_ND ~ log (N * log_N), data = results)
+# Régressions log-log pour obtenir les pentes
+lm_R_ND <- lm(log_Time_R_ND ~ Nlog_N, data = results)
+lm_cpp_ND <- lm(log_Time_cpp_ND ~ Nlog_N, data = results)
+
+# Extraction des pentes
 pente_R_ND <- coef(lm_R_ND)[2]
-cat("Pente de la régression en R :", pente_R_ND, "\n")
-
-# Régression linéaire log-log pour Rcpp
-lm_cpp_ND <- lm(log_Time_cpp_ND ~ log (N * log_N), data = results)
 pente_cpp_ND <- coef(lm_cpp_ND)[2]
-cat("Pente de la régression en Rcpp :", pente_cpp_ND, "\n")
 
-# Tracer la régression avec légende
-ggplot(results, aes(x = log (N * log_N))) +
-  geom_point(aes(y = log_Time_R_ND, color = "R_ND"), size = 2) +
-  geom_point(aes(y = log_Time_cpp_ND, color = "cpp_ND"), size = 2) +
-  geom_smooth(aes(y = log_Time_R_ND, color = "R_ND"), method = "lm", se = FALSE, size = 1) +
-  geom_smooth(aes(y = log_Time_cpp_ND, color = "cpp_ND"), method = "lm", se = FALSE, size = 1) +
-  labs(title = "Régression log-log des temps d'exécution en fonction de Nlog(N)",
-       x = "log( N log (N)) ",
-       y = "log (Temps d'exécution)",
-       color = "Langage") +
+# Graphique
+ggplot(results, aes(x = Nlog_N)) +
+  geom_point(aes(y = log_Time_R_ND, color = "R_ND"), size = 3, shape = 16, alpha = 0.7) +
+  geom_point(aes(y = log_Time_cpp_ND, color = "cpp_ND"), size = 3, shape = 16, alpha = 0.7) +
+  geom_smooth(aes(y = log_Time_R_ND, color = "R_ND"), method = "lm", se = FALSE, size = 1, linetype = "dashed") +
+  geom_smooth(aes(y = log_Time_cpp_ND, color = "cpp_ND"), method = "lm", se = FALSE, size = 1, linetype = "dashed") +
+  labs(
+    title = "Régression log-log des temps d'exécution en fonction de N log(N) (Méthode ND)",
+    subtitle = paste("Pente (R_ND) =", round(pente_R_ND, 5), "| Pente (cpp_ND) =", round(pente_cpp_ND, 5)),
+    x = "Nlog(N)",
+    y = "log(Temps d'exécution)",
+    color = "Méthode"
+  ) +
   scale_color_manual(values = c("R_ND" = "blue", "cpp_ND" = "red")) +
   theme_minimal() +
-  theme(legend.position = "top") 
+  theme(legend.position = "top", plot.subtitle = element_text(size = 12, face = "italic"))
 
 ```
 
