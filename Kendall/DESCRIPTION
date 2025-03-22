@@ -1,0 +1,9 @@
+Package: Kendall
+Type: Package
+Title:Implementation of Kendall's Tau calculation algorithms in R and Rcpp
+Version: 1.0
+Date: 2025-03-21
+Description: Implementation of Kendall's Tau calculation algorithms in R and Rcpp
+Imports: Rcpp (>= 1.0.14)
+LinkingTo: Rcpp
+RoxygenNote: 7.3.2
