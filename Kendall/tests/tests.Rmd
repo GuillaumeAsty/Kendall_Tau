@@ -7,9 +7,49 @@ library(reshape2)
 library(Kendall)
 ```
 
-```{r}
 
+```{r}
+# Fonction pour générer des données synthétiques
+
+generate_correlated_data <- function(n = 100) {
+
+  # Générer un tau de Kendall aléatoire entre -1 et 1
+  tau <- runif(1, -1, 1)
+  
+  # Approximation de la corrélation de Pearson à partir du tau de Kendall
+  rho <- sin(tau * pi / 2)
+  
+  # Générer deux variables normales standard indépendantes
+  X <- rnorm(n)
+  Z <- rnorm(n)
+  
+  # Construire Y avec la corrélation rho
+  Y <- rho * X + sqrt(1 - rho^2) * Z
+  
+  return(list(X = X, Y = Y, tau = tau, rho = rho))
+}
+
+# Tests
+results <- data.frame(tau = numeric(), kendall_tau = numeric())
+for (i in 1:1000) {
+  data <- generate_correlated_data(100)
+  kendall_tau <- cor(data$X, data$Y, method = "kendall")
+  results <- rbind(results, data.frame(tau = data$tau, kendall_tau = kendall_tau))
+}
+
+ggplot(results, aes(x = tau, y = kendall_tau)) +
+  geom_point(color = "blue") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Relation entre tau généré et tau estimé", 
+       x = "Tau généré", 
+       y = "Tau de estimé") +
+  theme_minimal()
+
+```
+
+```{r}
 # Fonction pour calculer la corrélation de Kendall sur un échantillon bootstrap
+
 bootstrap_kendall <- function(x, y, n_bootstrap) {
   tau_bootstrap <- numeric(n_bootstrap)
   
@@ -28,22 +68,6 @@ bootstrap_kendall <- function(x, y, n_bootstrap) {
            lower = quantile(tau_bootstrap, 0.025), 
            upper = quantile(tau_bootstrap, 0.975)))
 }
-
-# Fonction pour générer des données avec une structure de corrélation non linéaire
-generate_nonlinear_data <- function(n) {
-  # Générer X et alpha aléatoires
-  X <- rnorm(n)
-  alpha <- rnorm(n)
-  
-  # Calculer Y en fonction de alpha
-  Y <- ifelse(alpha > 0,   # Corrélation positive
-              X + X * rnorm(n),  # Y = X * un bruit aléatoire
-              ifelse(alpha < 0,  # Corrélation négative
-                     (X + X * rnorm(n)) * -1,  # Y = -X * un bruit aléatoire
-                     rnorm(n)))  # Si alpha = 0, Y indépendant de X
-  
-  return(list(X = X, Y = Y))
-}
 ```
 
 
@@ -55,7 +79,7 @@ n_bootstrap <- 100
 results <- data.frame()
 
 for (N in N_values) {
-  data <- generate_nonlinear_data(N)
+  data <- generate_correlated_data(N)
   x <- data$X
   y <- data$Y
   
@@ -117,13 +141,13 @@ plot_tau_vs_bootstrap_with_ci <- function(results) {
                        variable.name = "Method", value.name = "Tau")
   
   # Définir des tailles différentes de points pour chaque méthode
-  size_mapping <- c("Tau_R_naif" = 3.5, "Tau_R_ND" = 3, "Tau_cpp_naif" = 2.5, "Tau_cpp_ND" = 2)
+  size_mapping <- c("Tau_R_naif" = 2, "Tau_R_ND" = 1.5, "Tau_cpp_naif" = 1, "Tau_cpp_ND" = 0.5)
   
   # Tracer les tau estimés en fonction de N avec les intervalles de confiance
   ggplot(results_long, aes(x = N, y = Tau, color = Method)) +
     geom_point(aes(size = Method), shape = 1, stroke = 1.2) +  # Cercles vides avec tailles différentes
     geom_errorbar(aes(ymin = Tau_Bootstrap_lower, ymax = Tau_Bootstrap_upper), 
-                  width = 0.01, alpha = 0.4, color = "gray") + 
+                  width = 0.01, alpha = 0.4, color = "black") + 
     scale_y_continuous(limits = c(-1, 1)) +
     scale_size_manual(values = size_mapping) +  
     labs(title = "Tau estimés vs Taille de l'échantillon (N) avec IC",
@@ -137,8 +161,6 @@ plot_tau_vs_bootstrap_with_ci <- function(results) {
 plot_tau_vs_bootstrap_with_ci(results)
 
 ```
-
-
 
 
 ```{r}
@@ -165,59 +187,6 @@ plot_execution_times <- function(results) {
 
 plot_execution_times(results)
 ```
-```{r}
-cat("##### Calcul du N maximum par méthode pour un temps limite fixé #####\n")
-find_max_N_power_test <- function(time_limit_sec, N_init = 10, N_max_exp = 6) {
-
-  # Fonctions à tester
-  methods <- list(
-    "Tau_R_naif" = naive_tau_kendall_R,
-    "Tau_R_ND" = NDtau_kendall_R,
-    "Tau_cpp_naif" = naive_tau_kendall_cpp,
-    "Tau_cpp_ND" = NDtau_kendall_cpp
-  )
-  
-  # Liste pour stocker le N_max pour chaque méthode
-  max_N_for_methods <- numeric(length(methods))
-  names(max_N_for_methods) <- names(methods)
-  
-  # Boucle sur chaque méthode
-  for (method in names(methods)) {
-    func <- methods[[method]]
-    
-    max_N_for_method <- 0  # Variable pour stocker le plus grand N testé sous le temps limite
-    
-    # Tester les puissances de N
-    for (exp in 1:N_max_exp) {
-      N_test <- N_init * 10^exp  # Puissance de 10 de N_test
-      data <- generate_nonlinear_data(N_test)
-      
-      # Mesurer le temps d'exécution
-      exec_time_sec <- microbenchmark(func(data$X, data$Y), times = 1)$time / 1e9  # Convertir en secondes
-      
-      # Ajouter le résultat si le temps est sous le temps limite
-      if (exec_time_sec > time_limit_sec) {
-        break  # Arrêter dès que le temps dépasse
-      }
-      
-      # Mettre à jour le plus grand N pour cette méthode
-      max_N_for_method <- N_test
-    }
-    
-    # Stocker le N_max pour la méthode
-    max_N_for_methods[method] <- max_N_for_method
-  }
-  
-  # Créer un data frame avec les résultats sous forme de ligne
-  N_results <- as.data.frame(t(max_N_for_methods))
-  colnames(N_results) <- names(methods)
-  
-  return(N_results)
-}
-
-max_N_test_results <- find_max_N_power_test(time_limit_sec = 60, N_init = 10, N_max_exp = 6)
-print(max_N_test_results)
-```
 
 
 ```{r}
@@ -237,6 +206,7 @@ ggplot(results, aes(x = N, y = Ratio_naif)) +
        subtitle = paste("Ratio moyen : ", round(mean(results$Ratio_naif), 2))) +
   theme_minimal()
 ```
+
 
 ```{r}
 cat ("##### Analyse du ratio entre R et C++ pour la méthode ND #####\n")
@@ -328,4 +298,63 @@ ggplot(results, aes(x = Nlog_N)) +
 
 ```
 
+
+```{r}
+cat("##### Calcul du N maximum par méthode pour un temps limite fixé #####\n")
+find_max_N_power_test <- function(time_limit_sec, base = 10, exp_min = 6, exp_max = 10) {
+  start_time <- Sys.time()
+
+  # Fonctions à tester
+  methods <- list(
+    "Tau_R_naif" = naive_tau_kendall_R,
+    "Tau_R_ND" = NDtau_kendall_R,
+    "Tau_cpp_naif" = naive_tau_kendall_cpp,
+    "Tau_cpp_ND" = NDtau_kendall_cpp
+  )
+  
+  # Liste pour stocker le N_max pour chaque méthode
+  max_N_for_methods <- numeric(length(methods))
+  names(max_N_for_methods) <- names(methods)
+  
+  # Boucle sur chaque méthode
+  for (method in names(methods)) {
+    func <- methods[[method]]
+    
+    max_N_for_method <- 0  # Variable pour stocker le plus grand N testé sous le temps limite
+    
+    # Tester les puissances de N
+    for (exp in exp_min:exp_max) {
+      N_test <- base^exp  # Puissance de 10 de N_test
+      data <- generate_correlated_data(N_test)
+      
+      # Mesurer le temps d'exécution
+      exec_time_sec <- microbenchmark(func(data$X, data$Y), times = 1)$time / 1e9  # Convertir en secondes
+      
+      # Ajouter le résultat si le temps est sous le temps limite
+      if (exec_time_sec > time_limit_sec) {
+        break  # Arrêter dès que le temps dépasse
+      }
+      
+      # Mettre à jour le plus grand N pour cette méthode
+      max_N_for_method <- N_test
+    }
+    
+    # Stocker le N_max pour la méthode
+    max_N_for_methods[method] <- max_N_for_method
+  }
+  
+  # Créer un data frame avec les résultats sous forme de ligne
+  N_results <- as.data.frame(t(max_N_for_methods))
+  colnames(N_results) <- names(methods)
+  
+  end_time <- Sys.time()  # Fin du chronomètre
+  total_exec_time_min <- as.numeric(difftime(end_time, start_time, units = "mins"))  # Temps total en minutes
+  cat("\nTemps total d'exécution de la fonction: ", total_exec_time_min, " minutes\n")
+  
+  return(N_results)
+}
+
+max_N_test_results <- find_max_N_power_test(time_limit_sec = 10, base = 2, exp_min = 14, exp_max = 20)
+print(max_N_test_results)
+```
 
