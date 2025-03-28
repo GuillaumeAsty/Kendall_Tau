@@ -2,20 +2,20 @@
 % Please edit documentation in R/kendall_tau.R
 \name{naive_tau_kendall_R}
 \alias{naive_tau_kendall_R}
-\title{Calcul du tau de Kendall (version naïve)}
+\title{Calcul du tau de Kendall (version naive)}
 \usage{
 naive_tau_kendall_R(X, Y)
 }
 \arguments{
-\item{X}{Un vecteur numérique.}
+\item{X}{Un vecteur numerique.}
 
-\item{Y}{Un vecteur numérique.}
+\item{Y}{Un vecteur numerique.}
 }
 \value{
 Le coefficient de Kendall tau.
 }
 \description{
-Cette fonction calcule le coefficient de Kendall en O(n²) en comparant chaque paire.
+Cette fonction calcule le coefficient de Kendall en O(n**2) en comparant chaque paire.
 }
 \examples{
 X <- c(3, 1, 4, 2, 5)

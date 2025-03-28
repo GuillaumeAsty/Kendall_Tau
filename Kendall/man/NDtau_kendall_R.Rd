@@ -2,20 +2,20 @@
 % Please edit documentation in R/kendall_tau.R
 \name{NDtau_kendall_R}
 \alias{NDtau_kendall_R}
-\title{Calcul du tau de Kendall optimisé (O(n log n))}
+\title{Calcul du tau de Kendall optimise (O(n log n))}
 \usage{
 NDtau_kendall_R(X, Y)
 }
 \arguments{
-\item{X}{Un vecteur numérique.}
+\item{X}{Un vecteur numerique.}
 
-\item{Y}{Un vecteur numérique.}
+\item{Y}{Un vecteur numerique.}
 }
 \value{
 Le coefficient de Kendall tau.
 }
 \description{
-Cette fonction utilise un tri et une structure de données optimisée pour calculer tau en O(n log n).
+Cette fonction utilise un tri et une structure de donnees optimisee pour calculer tau en O(n log n).
 }
 \examples{
 X <- c(3, 1, 4, 2, 5)
