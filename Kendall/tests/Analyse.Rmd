@@ -1,4 +1,7 @@
 ```{r}
+devtools::install_github("GuillaumeAsty/Kendall_Tau")
+
+
 library(ggplot2)
 library(microbenchmark)
 library(Rcpp)
