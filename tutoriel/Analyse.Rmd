@@ -1,8 +1,7 @@
 
 ```{r}
 devtools::install_github("GuillaumeAsty/Kendall_Tau")
-library(Kendall_Tau)
-
+library(Kendall)
 
 library(ggplot2)
 library(microbenchmark)
