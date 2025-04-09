@@ -1,7 +1,7 @@
 # Kendall_Tau
 Implementation of Kendall's Tau calculation algorithms in Rcpp
 
-Un .R et un .Rmd contenant des tests et une analyse des fonctions du package se trouve dans le dossier Kendall/tutoriel/.
+Un .Rmd contenant des tests des fonctions du package se trouve dans le dossier Kendall/tests/.
 
 Les 4 fonctions disponibles sont présentées ci-dessous, avec x et y les 2 vecteurs dont on veut calculer la corrélation au sens de Kendall :
 
