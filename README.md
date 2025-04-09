@@ -7,9 +7,9 @@ Les 4 fonctions disponibles sont présentées ci-dessous, avec x et y les 2 vect
 
 - naive_tau_kendall_R(x, y) : implémentation en R avec une complexité en N^3
 
-NDtau_kendall_R(x, y) : implémentation en R avec une complexité en N*logN
+- NDtau_kendall_R(x, y) : implémentation en R avec une complexité en N*logN
 
-naive_tau_kendall_cpp(x, y) : implémentation en Rcpp avec une complexité en N^3
+- naive_tau_kendall_cpp(x, y) : implémentation en Rcpp avec une complexité en N^3
 
-NDtau_kendall_cpp(x, y) : implémentation en Rcpp avec une complexité en N*logN
+- NDtau_kendall_cpp(x, y) : implémentation en Rcpp avec une complexité en N*logN
 
