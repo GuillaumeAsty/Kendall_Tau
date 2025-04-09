@@ -1,0 +1,33 @@
+
+```{r}
+devtools::install_github("GuillaumeAsty/Kendall_Tau")
+library(Kendall_Tau)
+library(ggplot2)
+
+# Fonction pour générer des données synthétiques
+generate_correlated_data <- function(n = 100) {
+  tau <- runif(1, -1, 1)
+  rho <- sin(tau * pi / 2)
+  X <- rnorm(n)
+  Z <- rnorm(n)
+  Y <- rho * X + sqrt(1 - rho^2) * Z
+  return(list(X = X, Y = Y, tau = tau, rho = rho))
+}
+
+data <- generate_correlated_data(100)
+x <- data$X
+y <- data$Y
+
+# Test des fonctions
+tau_R_naif <- naive_tau_kendall_R(x, y)
+cat("Tau Kendall R naif :", round(tau_R_naif, 3), "\n")
+
+tau_R_ND <- NDtau_kendall_R(x, y)
+cat("Tau Kendall R ND :", round(tau_R_ND, 3), "\n")
+
+tau_cpp_naif <- naive_tau_kendall_cpp(x, y)
+cat("Tau Kendall Rcpp naif :", round(tau_cpp_naif, 3), "\n")
+
+tau_cpp_ND <- NDtau_kendall_cpp(x, y)
+cat("Tau Kendall Rcpp ND :", round(tau_cpp_ND, 3), "\n")
+```
